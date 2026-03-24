@@ -40,6 +40,11 @@ if not exist ".venv32\Scripts\python.exe" (
 )
 
 echo [bootstrap_scraper] Ensuring scraper dependencies are installed...
+".venv32\Scripts\python.exe" -m pip install --upgrade pip
+if errorlevel 1 (
+    echo [bootstrap_scraper] ERROR: Failed to upgrade pip.
+    exit /b 1
+)
 ".venv32\Scripts\python.exe" -m pip install --quiet -r requirements.txt
 if errorlevel 1 (
     echo [bootstrap_scraper] ERROR: Failed to install dependencies.
