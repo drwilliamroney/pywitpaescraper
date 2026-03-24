@@ -12,7 +12,7 @@ if errorlevel 1 (
     for /f "tokens=2 delims= " %%V in ('py --version 2^>^&1') do set "PY_VER=%%V"
     for /f "tokens=1,2 delims=." %%A in ("%PY_VER%") do set "PY_MAJMIN=%%A.%%B"
 
-    echo [bootstrap_scraper] Detected default Python %PY_VER%. Installing Python %PY_MAJMIN% (32-bit) via winget...
+    echo [bootstrap_scraper] Detected default Python %PY_VER%. Installing Python %PY_MAJMIN% 32-bit via winget...
     winget install --id Python.Python.3.%PY_MAJMIN:~2% --architecture x86 --silent --accept-package-agreements --accept-source-agreements
     if errorlevel 1 (
         echo [bootstrap_scraper] ERROR: winget install failed.
