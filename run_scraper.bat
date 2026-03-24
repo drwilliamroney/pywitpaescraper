@@ -1,0 +1,52 @@
+@echo off
+setlocal EnableExtensions
+
+cd /d "%~dp0"
+
+rem ── Check that a 32-bit Python 3 launcher tag is available ──────────────────
+py -3-32 --version >nul 2>&1
+if errorlevel 1 (
+    echo [run_scraper] 32-bit Python 3 not found. Attempting to install...
+
+    rem Determine the version of the default 64-bit Python (e.g. "3.12")
+    for /f "tokens=2 delims= " %%V in ('py --version 2^>^&1') do set "PY_VER=%%V"
+    rem Trim to major.minor  (e.g. 3.12.4 -> 3.12)
+    for /f "tokens=1,2 delims=." %%A in ("%PY_VER%") do set "PY_MAJMIN=%%A.%%B"
+
+    echo [run_scraper] Detected default Python %PY_VER%. Installing Python %PY_MAJMIN% (32-bit) via winget...
+    winget install --id Python.Python.3.%PY_MAJMIN:~2% --architecture x86 --silent --accept-package-agreements --accept-source-agreements
+    if errorlevel 1 (
+        echo [run_scraper] ERROR: winget install failed.
+        echo [run_scraper] Please install a 32-bit Python 3 manually from https://www.python.org/downloads/windows/
+        echo [run_scraper] and ensure "py -3-32" resolves it via the Python Launcher.
+        exit /b 1
+    )
+
+    rem Verify the launcher can see it now
+    py -3-32 --version >nul 2>&1
+    if errorlevel 1 (
+        echo [run_scraper] ERROR: Installed but "py -3-32" still not found.
+        echo [run_scraper] You may need to restart this terminal so the Python Launcher picks it up.
+        exit /b 1
+    )
+    echo [run_scraper] 32-bit Python installed successfully.
+)
+
+rem ── Create venv and install dependencies if needed ─────────────────────────
+if not exist ".venv32\Scripts\python.exe" (
+    echo [run_scraper] Creating 32-bit virtual environment...
+    py -3-32 -m venv ".venv32"
+    if errorlevel 1 (
+        echo [run_scraper] ERROR: Failed to create 32-bit venv.
+        exit /b 1
+    )
+    echo [run_scraper] Installing dependencies...
+    ".venv32\Scripts\python.exe" -m pip install --quiet -r requirements.txt
+    if errorlevel 1 (
+        echo [run_scraper] ERROR: Failed to install dependencies.
+        exit /b 1
+    )
+)
+
+".venv32\Scripts\python.exe" pywitpaescraper.py %*
+exit /b %errorlevel%

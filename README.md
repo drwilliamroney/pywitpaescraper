@@ -1,6 +1,62 @@
+> **AI First Research Notice**
+> This repository — along with its companion [PyWITPAEUI](https://github.com/drwilliamroney/pywitpaeui) — is **100% built by GitHub Copilot** and constitutes a scientific test of the emerging *AI First* working pattern for software developers, conducted by **William N. Roney, ScD**. No human-authored source code was written; all design decisions, implementations, refactors, and repository operations were performed through natural-language instruction to the AI agent.
+
 # PyWITPAEScraper
 
 This project exports side-filtered game state and derived intel to JSON files.
+
+## Requirements
+
+- **32-bit Python 3** is required. The game's native DLL (`pwsdll.py`) uses `ctypes` to load a
+  32-bit Windows DLL, which is incompatible with a 64-bit interpreter.
+- Install a 32-bit Python 3 from <https://www.python.org/downloads/windows/> and ensure it is
+  registered with the [Python Launcher for Windows](https://docs.python.org/3/using/windows.html#python-launcher-for-windows)
+  so that `py -3-32` resolves correctly.
+- Dependencies (see `requirements.txt`) are installed automatically by `run_scraper.bat`.
+
+## How to Run
+
+### Recommended: via `run_scraper.bat` (auto-bootstrap)
+
+`run_scraper.bat` handles everything — it checks for a 32-bit interpreter (and attempts to
+install one via `winget` if missing), creates a `.venv32` virtual environment, installs
+dependencies, and then forwards all arguments to `pywitpaescraper.py`.
+
+```bat
+run_scraper.bat ^
+  --dll-dir "C:\Matrix Games\War in the Pacific Admiral's Edition" ^
+  --start-of-day-file "...\SAVE\wpae002.pws" ^
+  --end-of-day-file   "...\SAVE\wpae000.pws" ^
+  --allied ^
+  --output-dir "...\SAVE\ALLIED"
+```
+
+Replace `--allied` with `--japan` for the Japanese side.
+
+### Manual / advanced
+
+If you prefer to manage the interpreter yourself, invoke `pywitpaescraper.py` directly with a
+32-bit Python interpreter:
+
+```bat
+py -3-32 pywitpaescraper.py ^
+  --dll-dir "C:\Matrix Games\War in the Pacific Admiral's Edition" ^
+  --start-of-day-file "...\SAVE\wpae002.pws" ^
+  --end-of-day-file   "...\SAVE\wpae000.pws" ^
+  --allied ^
+  --output-dir "...\SAVE\ALLIED"
+```
+
+### Arguments
+
+| Argument | Required | Description |
+|---|---|---|
+| `--dll-dir PATH` | Yes | Game installation directory containing the DLL files |
+| `--start-of-day-file PATH` | Yes | Path to `wpae002.pws` (start-of-day save) |
+| `--end-of-day-file PATH` | Yes | Path to `wpae000.pws` (end-of-day save) |
+| `--allied` / `--japan` | Yes (one) | Side to export |
+| `--output-dir PATH` | No | Output directory for JSON files (defaults to `ALLIED`/`JAPAN` under the save dir) |
+| `--log-level LEVEL` | No | Logging verbosity: `DEBUG`, `INFO` (default), `WARNING`, `ERROR`, `CRITICAL` |
 
 ## Output Files
 
