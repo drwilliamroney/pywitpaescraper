@@ -1721,6 +1721,7 @@ class WITPAE_Today:
                     "y": end_xy[1] if end_xy else None,
                     "loaded_ground_unit_id": None,
                     "loaded_ground_unit_name": None,
+                    "loaded_ground_unit_type_name": None,
                     "loaded_airgroup_cargo_id": None,
                     "loaded_airgroup_cargo_name": None,
                     "_ship_unit_loaded_raw": int(ship.get("shipUnitLoaded", -1)),
@@ -2225,9 +2226,9 @@ class WITPAE_Today:
                     return rec
             return None
 
-        def _resolve_ground_name_from_locations(raw_loaded: int) -> tuple[int | None, str | None]:
+        def _resolve_ground_name_from_locations(raw_loaded: int) -> tuple[int | None, str | None, str | None]:
             if raw_loaded <= 0:
-                return (None, None)
+                return (None, None, None)
 
             candidate_ids = [raw_loaded]
             if raw_loaded >= num_base_locs:
@@ -2244,9 +2245,10 @@ class WITPAE_Today:
                 if str(loc.get("role") or "") != "ground_unit":
                     continue
                 loc_name = str(loc.get("name") or "").strip() or None
+                loc_type_name = location_type_to_name(int(loc.get("type", -1))) if loc.get("type") is not None else None
                 if loc_name:
-                    return (candidate_id, loc_name)
-            return (None, None)
+                    return (candidate_id, loc_name, loc_type_name)
+            return (None, None, None)
 
         # Build reciprocal ship <-> loaded-airgroup-cargo links using shipUnitLoaded.
         airgroup_by_id: dict[int, dict] = {int(ag["record_id"]): ag for ag in airgroup_records}
@@ -2257,6 +2259,7 @@ class WITPAE_Today:
             if loaded_ground:
                 ship_rec["loaded_ground_unit_id"] = loaded_ground.get("record_id")
                 ship_rec["loaded_ground_unit_name"] = loaded_ground.get("name")
+                ship_rec["loaded_ground_unit_type_name"] = loaded_ground.get("unit_type_name")
 
             raw_loaded = int(ship_rec.get("_ship_unit_loaded_raw", -1))
             if raw_loaded > 0:
@@ -2264,6 +2267,7 @@ class WITPAE_Today:
                 if cargo_ground and cargo_ground.get("name"):
                     ship_rec["loaded_ground_unit_id"] = cargo_ground.get("record_id")
                     ship_rec["loaded_ground_unit_name"] = cargo_ground.get("name")
+                    ship_rec["loaded_ground_unit_type_name"] = cargo_ground.get("unit_type_name")
                     cargo_ground["loaded_on_ship_id"] = ship_id
                     cargo_ground["loaded_on_ship_name"] = ship_rec.get("name")
                     cargo_ground["task_force_id"] = ship_rec.get("task_force_id")
@@ -2272,9 +2276,10 @@ class WITPAE_Today:
                     cargo_ground["stationed_at_base_name"] = None
                 elif ship_rec.get("loaded_ground_unit_id") is None:
                     # Preserve unresolved cargo reference so UI can still show embarked load placeholders.
-                    loc_unit_id, loc_unit_name = _resolve_ground_name_from_locations(raw_loaded)
+                    loc_unit_id, loc_unit_name, loc_unit_type_name = _resolve_ground_name_from_locations(raw_loaded)
                     ship_rec["loaded_ground_unit_id"] = loc_unit_id if loc_unit_id is not None else raw_loaded
                     ship_rec["loaded_ground_unit_name"] = loc_unit_name
+                    ship_rec["loaded_ground_unit_type_name"] = loc_unit_type_name
 
                 cargo_airgroup = airgroup_by_id.get(raw_loaded)
                 if (
