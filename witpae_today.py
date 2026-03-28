@@ -1528,10 +1528,36 @@ class WITPAE_Today:
                     "source_leader_name": location_leader_name(loc),
                 }
 
-        def loaded_ship_payload(candidate_ship_id: int) -> dict | None:
-            if candidate_ship_id < 0 or candidate_ship_id >= len(ships):
+        def _resolve_ship_record_idx(candidate_ref_id: int) -> int | None:
+            """Resolve potential ship references from either ship-index or location-style ids."""
+            if candidate_ref_id < 0:
                 return None
-            ship = ships[candidate_ship_id]
+
+            candidates: list[int] = []
+
+            # Common encoding used by baseID/locNear when referencing ship slots.
+            if candidate_ref_id >= num_base_locs:
+                candidates.append(candidate_ref_id - num_base_locs)
+
+            # Some datasets may already provide ship record index directly.
+            candidates.append(candidate_ref_id)
+
+            seen: set[int] = set()
+            for idx in candidates:
+                if idx in seen:
+                    continue
+                seen.add(idx)
+                if idx < 0 or idx >= len(ships):
+                    continue
+                return idx
+            return None
+
+        def loaded_ship_payload(candidate_ship_id: int) -> dict | None:
+            ship_idx = _resolve_ship_record_idx(candidate_ship_id)
+            if ship_idx is None:
+                return None
+
+            ship = ships[ship_idx]
             if not self._nation_allowed(int(ship["nation"])):
                 return None
             if not self._arrived_by_gameday(int(ship.get("shipDelay", 0)), end_gameday):
@@ -1540,11 +1566,13 @@ class WITPAE_Today:
             if not ship_name:
                 return None
             ship_xy = end_locations_xy.get(int(ship.get("shipTF", -1)))
+            task_force_id = self._taskforce_id_from_ship_tf(int(ship.get("shipTF", -1)))
             return {
-                "id": candidate_ship_id,
+                "id": ship_idx,
                 "name": ship_name,
                 "x": ship_xy[0] if ship_xy else None,
                 "y": ship_xy[1] if ship_xy else None,
+                "task_force_id": task_force_id,
             }
 
         pilot_count_by_airgroup: dict[int, int] = {}
@@ -1738,7 +1766,7 @@ class WITPAE_Today:
                 if linked and linked.get("role") in {"base", "beach"}:
                     prep_target = linked
 
-                local_base_id = linked_id if linked and linked.get("role") == "base" else None
+                local_base_id = linked_id if linked and linked.get("role") == "base" and loaded_ship is None else None
                 local_fleet_hq = local_fleet_hq_by_base.get(local_base_id, {}) if local_base_id is not None else {}
                 base_chain_hq_id = int(attached_hq.get("id")) if attached_hq else None
                 base_chain_hq_name = (attached_hq.get("name") or None) if attached_hq else None
@@ -1885,6 +1913,7 @@ class WITPAE_Today:
                         "effective_hq_source": effective_hq_source,
                         "loaded_on_ship_id": loaded_ship["id"] if loaded_ship else None,
                         "loaded_on_ship_name": loaded_ship["name"] if loaded_ship else None,
+                        "task_force_id": loaded_ship.get("task_force_id") if loaded_ship else None,
                         "at_base_id": local_base_id,
                         "stationed_at_base_id": local_base_id,
                         "stationed_at_base_name": (linked.get("name") or None) if local_base_id is not None and linked else None,
@@ -2170,6 +2199,55 @@ class WITPAE_Today:
                 },
             )
 
+        ground_by_id: dict[int, dict] = {
+            int(gr["record_id"]): gr
+            for gr in ground_records
+            if gr.get("record_id") is not None
+        }
+
+        def _resolve_ground_record_from_loaded(raw_loaded: int) -> dict | None:
+            if raw_loaded <= 0:
+                return None
+
+            # Observed layouts may encode ground refs either directly as location id
+            # or as a location-offset id (similar to ship/base references).
+            candidate_ids = [raw_loaded]
+            if raw_loaded >= num_base_locs:
+                candidate_ids.append(raw_loaded - num_base_locs)
+
+            seen: set[int] = set()
+            for candidate_id in candidate_ids:
+                if candidate_id in seen:
+                    continue
+                seen.add(candidate_id)
+                rec = ground_by_id.get(candidate_id)
+                if rec is not None:
+                    return rec
+            return None
+
+        def _resolve_ground_name_from_locations(raw_loaded: int) -> tuple[int | None, str | None]:
+            if raw_loaded <= 0:
+                return (None, None)
+
+            candidate_ids = [raw_loaded]
+            if raw_loaded >= num_base_locs:
+                candidate_ids.append(raw_loaded - num_base_locs)
+
+            seen: set[int] = set()
+            for candidate_id in candidate_ids:
+                if candidate_id in seen:
+                    continue
+                seen.add(candidate_id)
+                loc = location_by_id.get(candidate_id)
+                if not loc:
+                    continue
+                if str(loc.get("role") or "") != "ground_unit":
+                    continue
+                loc_name = str(loc.get("name") or "").strip() or None
+                if loc_name:
+                    return (candidate_id, loc_name)
+            return (None, None)
+
         # Build reciprocal ship <-> loaded-airgroup-cargo links using shipUnitLoaded.
         airgroup_by_id: dict[int, dict] = {int(ag["record_id"]): ag for ag in airgroup_records}
         for ship_rec in ship_records:
@@ -2182,6 +2260,22 @@ class WITPAE_Today:
 
             raw_loaded = int(ship_rec.get("_ship_unit_loaded_raw", -1))
             if raw_loaded > 0:
+                cargo_ground = _resolve_ground_record_from_loaded(raw_loaded)
+                if cargo_ground and cargo_ground.get("name"):
+                    ship_rec["loaded_ground_unit_id"] = cargo_ground.get("record_id")
+                    ship_rec["loaded_ground_unit_name"] = cargo_ground.get("name")
+                    cargo_ground["loaded_on_ship_id"] = ship_id
+                    cargo_ground["loaded_on_ship_name"] = ship_rec.get("name")
+                    cargo_ground["task_force_id"] = ship_rec.get("task_force_id")
+                    cargo_ground["at_base_id"] = None
+                    cargo_ground["stationed_at_base_id"] = None
+                    cargo_ground["stationed_at_base_name"] = None
+                elif ship_rec.get("loaded_ground_unit_id") is None:
+                    # Preserve unresolved cargo reference so UI can still show embarked load placeholders.
+                    loc_unit_id, loc_unit_name = _resolve_ground_name_from_locations(raw_loaded)
+                    ship_rec["loaded_ground_unit_id"] = loc_unit_id if loc_unit_id is not None else raw_loaded
+                    ship_rec["loaded_ground_unit_name"] = loc_unit_name
+
                 cargo_airgroup = airgroup_by_id.get(raw_loaded)
                 if (
                     cargo_airgroup
